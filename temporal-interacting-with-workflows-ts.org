@@ -1,0 +1,1035 @@
+#+TITLE:     Interacting with Workflows with Typescript
+#+AUTHOR:    Jeff Romine
+#+EMAIL:     jromineut@gmail.com
+#+DATE:      2025-07-09 Wed
+#+DESCRIPTION:
+#+KEYWORDS:
+#+LANGUAGE:  en
+#+OPTIONS:   H:3 num:t toc:t \n:nil @:t ::t |:t ^:t -:t f:t *:t <:t
+#+OPTIONS:   TeX:t LaTeX:t skip:nil d:nil todo:t pri:nil tags:not-in-toc
+#+OPTIONS: ^:{} author:nil email:nil creator:nil timestamp:nil
+#+INFOJS_OPT: view:nil toc:nil ltoc:t mouse:underline buttons:0 path:http://orgmode.org/org-info.js
+#+EXPORT_SELECT_TAGS: export
+#+EXPORT_EXCLUDE_TAGS: noexport
+#+LINK_UP:
+#+LINK_HOME:
+#+XSLT:
+#+STARTUP: showeverything
+
+* [[https://temporal.talentlms.com/learner/courseinfo/id:207][Interacting with Workflows with TypeScript]]
+
+* [[https://temporal.talentlms.com/unit/view/id:3137][Welcome]]
+
+* [[https://temporal.talentlms.com/unit/view/id:3140][Course Outcomes]]
+
+#+begin_quote
+Integrate Signals and Queries with Workflows
+
+- Define and handle Signals
+  - Send Signals through the Client, Workflow, and Command Line
+    Interface
+  - Use Signal-With-Start and identify its use cases
+  - Identify common problems with Signals and explain their
+    workarounds
+  - Identify Events that pertain to Signals in the Event History
+  - Define and handle Queries
+  - Send Queries through the SDK and Command Line Interface
+  - Define Queries and Signals within a Temporal Workflow, both
+    statically and dynamically, and explain their advantages
+  - Develop Custom Search Attributes to identify specific Workflow
+    Executions
+- Explain the difference between default and custom Search Attributes
+  - Query your Workflows with Search Attributes with your CLI, SDK,
+    Web UI
+  - Set Custom Search Attributes with your CLI
+  - Set logic for Search Attributes in the Workflow and then query
+    them with your CLI or Client
+  - Evaluate methods to stop Workflow Executions
+- Identify the differences between canceling and terminating a
+  Workflow Execution
+  - Cancel a Workflow Execution through the Web UI, CLI, and SDK
+  - Use cancellation scopes and describe some patterns used with them
+  - Explain what a CancelledFailure is and how it is thrown
+  - Develop Activities asynchronously
+- Explain the purpose and functionality of an Activity Heartbeat
+  - Explain Asynchronous Activity Completion and how it is used to
+    provide flexibility in handling long-running or externally
+    dependent tasks
+  - Identify use cases and scenarios where a developer would use
+    Asynchronous Activity Completion as opposed to Signals, and the
+    advantages of both
+  - Retrieve a Task Token from your Activity Execution
+  - Asynchronously complete an Activity with the SDK
+
+#+end_quote
+
+
+* [[https://temporal.talentlms.com/unit/view/id:3146][Signaling Your Workflows]]
+
+#+begin_quote
+- Define and handle Signals
+- Send Signals through the Client, Workflow, and Command Line
+  Interface
+- Use Signal-With-Start and identify its use cases
+- Identify common problems with Signals and explain their workarounds
+- Identify Events that pertain to Signals in the Event History
+#+end_quote
+
+* [[https://temporal.talentlms.com/unit/view/id:3145][What Are Signals?]]
+
+* [[https://temporal.talentlms.com/unit/view/id:3147][Developing Signals]]
+
+** Defining the Signal
+
+#+begin_src javascript
+import { defineSignal } from "@temporalio/workflow";
+
+interface JoinInput {
+  userId: string;
+  groupId: string;
+}
+
+export const joinSignal = defineSignal<[JoinInput]>("join");
+
+#+end_src
+
+** Handling a Signal
+
+#+begin_src javascript
+import { setHandler } from "@temporalio/workflow";
+
+export async function joinSignalHandler() {
+  const groups = new Map<string, Set<string>>();
+
+  setHandler(joinSignal, ({ userId, groupId }: JoinInput) => {
+    const group = groups.get(groupId);
+    if (group) {
+      group.add(userId);
+    } else {
+      groups.set(groupId, new Set([userId]));
+    }
+  });
+}
+
+#+end_src
+
+** Waiting for Signals
+
+#+begin_src javascript
+await condition()
+#+end_src
+
+* [[https://temporal.talentlms.com/unit/view/id:3148][What is setDefaultSignalHandler?]]
+
+#+begin_src javascript
+export async function workflowWithDefaultSignalHandler() {
+  // ...
+  setDefaultSignalHandler((signalName: string, ...args: unknown[]) => {});
+  // ...
+}
+#+end_src
+
+** What does this mean?
+
+#+begin_quote
+It's important to note that invoking setDefaultSignalHandler multiple
+times will result in the most recent call superseding any previously
+set handlers for the same signal or query name.
+#+end_quote
+
+** Signal order is preserved across signal types with setDefaultSignalHandler.
+
+#+begin_quote
+One advantage to setDefaultSignalHandler is that Signals are
+dispatched to the default Signal handler in the order that they were
+accepted by the server. This maintains the sequence and consistency of
+Workflow operations, particularly when dealing with asynchronous
+Signal events that may arrive at the Workflow from various sources at
+different times. For example, imagine the following sequence:
+#+end_quote
+
+** Processing order and "fat handlers"
+
+#+begin_quote
+To address potential issues with processing order, especially when
+it's critical to maintain the original sequence of signals, using
+setDefaultSignalHandler or implementing a "fat handler" (explained in
+the Queries chapter) is recommended. These approaches ensure that
+Signals are managed efficiently, preserving their order of arrival and
+upholding the Workflow's logical consistency and predictability.
+#+end_quote
+
+* [[https://temporal.talentlms.com/unit/view/id:3149][How to Send Signals]]
+
+
+** Send a Signal from a Temporal Client
+
+#+begin_src javascript
+import { Client } from "@temporalio/client";
+import { joinSignal } from "./workflows";
+
+const client = new Client();
+
+const handle = client.workflow.getHandle("workflow-id-123");
+
+await handle.signal(joinSignal, { userId: "user-1", groupId: "group-1" });
+
+#+end_src
+
+** Send a Signal with the Temporal CLI
+
+#+begin_src shell-script
+$ temporal workflow signal \
+  --workflow-id="helloSignal" \
+  --name="updateGreeting" \
+  --input=\"Bye\"
+#+end_src
+
+
+** Send a Signal from Within a Workflow
+
+#+begin_src javascript
+import { getExternalWorkflowHandle } from "@temporalio/workflow";
+import { joinSignal } from "./other-workflow";
+
+export async function yourWorkflowThatSignals() {
+  const handle = getExternalWorkflowHandle("workflow-id-123");
+  await handle.signal(joinSignal, { userId: "user-1", groupId: "group-1" });
+}
+#+end_src
+
+
+#+begin_quote
+Workflows can also send Signals to other Workflows. This is known as
+an External Signal.
+
+In complex systems where multiple Workflows need to be coordinated
+(like in supply chain management), one Workflow can send Signals to
+others to synchronize tasks or share data. For example, a quality
+assurance Workflow signaling a manufacturing Workflow to halt
+production if a quality check fails.
+
+In order to send an External Signal, we need to use the
+getExternalWorkflowHandle method. This method retrieves a handle of
+another Workflow using its Workflow ID. This example uses this method
+to send a Signal from within a Workflow.
+
+The code above communicates between Workflows by sending a Signal
+named joinSignal from the current Workflow to another Workflow
+identified as workflow-id-123. The joinSignal Signal carries data - {
+userId: "user-1", groupId: "group-1" } - to be used by the receiving
+Workflow to perform the action specified in the setHandler function
+for joinSignal.
+
+Another important note about getExternalWorkflowHandle that may
+surprise some users is that both this method, as well as getHandle, do
+not check if the target Workflow exists. For example, in the code
+snippet above, if there is no running Workflow whose ID is
+workflow-id-123, it is the Signal call that will fail, not
+getExternalWorkflowHandle.
+
+Another reason we use the getExternalWorkflowHandle method is to
+ensure that Workflows remain deterministic. Recall that one aspect of
+deterministic Workflows means not directly making network calls from
+the Workflow. This means that developers cannot use a Temporal Client
+directly within the Workflow code to send Signals or start other
+Workflows. Instead, to communicate between Workflows, we use
+getExternalWorkflowHandle to both ensure that Workflows remain
+deterministic and also that these interactions are recorded as Events
+in the Workflow's Event History.
+
+#+end_quote
+
+* [[https://temporal.talentlms.com/unit/view/id:3150][Signal-With-Start]]
+
+Signal-With-Start is a Client method that takes the following arguments:
+
+- Workflow type
+- A Workflow ID
+- Workflow input
+- A Signal type
+- Signal input
+- Task Queue
+
+#+begin_src javascript
+import { Client } from "@temporalio/client";
+import { joinSignal, yourWorkflow } from "./workflows";
+
+const client = new Client();
+
+await client.workflow.signalWithStart(yourWorkflow, {
+  workflowId: "workflow-id-123",
+  taskQueue: "my-taskqueue",
+  args: [{ foo: 1 }],
+  signal: joinSignal,
+  signalArgs: [{ userId: "user-1", groupId: "group-1" }],
+});
+
+#+end_src
+
+* [[https://temporal.talentlms.com/unit/view/id:3151][Common Problems with Signals and Their Workarounds]]
+
+
+* [[https://temporal.talentlms.com/unit/view/id:3152][What is the Entity Workflow Pattern?]]
+
+
+#+begin_src javascript
+// Make sure Request is serializable to JSON (ie. no function, no promises, etc)
+type OrderUpdate = {
+  orderId: string;
+  updateType: "purchase" | "cancel" | "modify";
+};
+
+// Entity workflow pattern with serialization of request
+// (ie. only one request is processed at a time)
+export async function orderManagementWorkflow(
+  orderUpdates: OrderUpdate[] = []
+): Promise<void> {
+  // Add new order updates to the queue
+  setHandler(newOrderSignal, (update: OrderUpdate) => {
+    orderUpdates.push(update);
+    // Don't await here.
+    // Otherwise, the Workflow may complete before the promise completes.
+  });
+
+  while (!workflowInfo().continueAsNewSuggested) {
+    const timeSinceStart = Date.now() - workflowInfo().runStartTime.getTime();
+    const shouldProcessMore = await condition(
+      () => requests.length > 0,
+      ms("24h") - timeSinceStart
+    );
+    if (!shouldProcessMore) break;
+
+    const update = orderUpdates.shift();
+
+    // Apply the update (purchase, cancellation, modification)
+    await processOrderUpdate(update);
+  }
+
+  // Huge histories are bad for performance,
+  // so we switch to a new Workflow Execution
+  // whenever history grows over 2000 Events.
+  // When that happens, we forward any outstanding requests to the next execution.
+  await continueAsNew(requests);
+}
+
+// Detailed handling based on the type of update
+async function processOrderUpdate(update: OrderUpdate): Promise<void> {
+  // Implementation for processing each order update
+  // It's okay to await here
+}
+
+#+end_src
+
+* [[https://temporal.talentlms.com/unit/view/id:3154][Signals in Your Event History - TypeScript]]
+
+* [[https://temporal.talentlms.com/unit/view/id:3156][Querying Your Workflows]]
+
+* [[https://temporal.talentlms.com/unit/view/id:3157][What Are Queries?]]
+
+* [[https://temporal.talentlms.com/unit/view/id:3158][Developing Queries]]
+
+
+
+#+end_src
+
+** Defining a Query
+
+#+begin_src javascript
+import { defineQuery } from "@temporalio/workflow";
+
+export const getValueQuery = defineQuery<number | undefined, [string]>(
+  "getValue"
+);
+
+** Handling a Query
+
+#+begin_src javascript
+export async function trackState(): Promise<void> {
+  const state = new Map<string, number>();
+  setHandler(getValueQuery, (key) => state.get(key));
+}
+#+end_src
+
+* [[https://temporal.talentlms.com/unit/view/id:3159][Sending Queries]]
+
+** Sending a Query with the SDK
+
+#+begin_src javascript
+import { Client } from "@temporalio/client";
+import { getValueQuery } from "./workflows";
+
+async function run(): Promise<void> {
+  const client = new Client();
+  const handle = client.workflow.getHandle("state-id-0");
+  const meaning = await handle.query(getValueQuery, "meaning-of-life");
+  console.log(meaning);
+}
+
+#+end_src
+
+** Sending a Query with the CLI
+
+#+begin_src javascript
+$ temporal workflow query \
+    --workflow-id="state-id-0" \
+    --type="getValueQuery" \
+    --input=\"meaning-of-life\"
+#+end_src
+
+* [[https://temporal.talentlms.com/unit/view/id:3160][How to Define Signals and Queries Statically]]
+
+#+begin_src javascript
+import * as wf from "@temporalio/workflow";
+
+export const unblockSignal = wf.defineSignal("unblock");
+export const isBlockedQuery = wf.defineQuery<boolean>("isBlocked");
+
+export async function unblockOrCancel(): Promise<void> {
+  let isBlocked = true;
+  wf.setHandler(unblockSignal, () => {
+          isBlocked = false;
+        })
+  wf.setHandler(isBlockedQuery, () => {
+    return isBlocked;
+  });
+  wf.log.info("Blocked");
+  try {
+    await wf.condition(() => {
+      !isBlocked
+  });
+  } catch (err) {
+    if (err instanceof wf.CancelledFailure) {
+      wf.log.info("Cancelled");
+    }
+    throw err;
+  }
+}
+#+end_src
+
+* [[https://temporal.talentlms.com/unit/view/id:3161][How to Define Signals and Queries Dynamically]]
+
+** The "Fat Handler" Approach
+
+#+begin_src javascript
+import * as wf from "@temporalio/workflow";
+
+wf.setHandler(`genericSignal`, (payload) => {
+  switch (payload.taskId) {
+    case taskAId:
+      // do task A things
+      break;
+    case taskBId:
+      // do task B things
+      break;
+    default:
+      throw new Error("Unexpected task.");
+  }
+});
+
+#+end_src
+
+** The Inline Definition Approach
+
+#+begin_src javascript
+// "inline definition" solution
+wf.setHandler(wf.defineSignal(`task-${taskAId}`), (payload) => {
+  /* do task A things */
+});
+wf.setHandler(wf.defineSignal(`task-${taskBId}`), (payload) => {
+  /* do task B things */
+});
+
+#+end_src
+
+#+begin_src javascript
+// utility "inline definition" helper
+const inlineSignal = (signalName, handler) =>
+  wf.setHandler(wf.defineSignal(signalName), handler);
+
+inlineSignal(`task-${taskBId}`, (payload) => {
+  /* do task B things */
+});
+
+#+end_src
+
+* Finding Workflows with Search Attributes
+
+#+begin_quote
+In this chapter, you will use Search Attributes to efficiently list and filter Workflow Executions.
+
+Specifically, by the end of this chapter, you will:
+
+- Explain the difference between default and Custom attributes
+- List your Workflows, with filtering based on Search Attributes,
+  using your CLI, your SDK, and Web UI
+- Set Custom Search attributes with your CLI
+- Set logic for search attributes in the Workflow and then query for
+  them from your CLI or Client
+
+#+end_quote
+
+* What is the Temporal Visibility Feature?
+
+** [[https://docs.temporal.io/visibility#search-attribute][Temporal Visibility]]
+
+* [[https://temporal.talentlms.com/unit/view/id:3167][What is a list filter?]]
+
+** Web UI
+
+#+begin_example
+WorkflowType = "pizzaWorkflow" AND ExecutionStatus = "Running"
+#+end_example
+
+** CLI
+
+#+begin_src shell-script
+temporal workflow list --query 'WorkflowType = "pizzaWorkflow" AND ExecutionStatus = "Running"'
+#+end_src
+
+* [[https://temporal.talentlms.com/unit/view/id:3164][What is a Search Attribute?]]
+
+** [[https://docs.temporal.io/search-attribute#default-search-attribute][Default Search Attributes]]
+
+* [[https://temporal.talentlms.com/unit/view/id:3168][Custom Search Attributes]]
+
+* [[https://temporal.talentlms.com/unit/view/id:3169][How to Use Custom Search Attributes]]
+
+#+begin_src javascript
+const order = {
+  orderId: "12345",
+  customerId: "cust789",
+  orderDate: new Date(),
+  // other order details...
+};
+
+const handle = await client.workflow.start(orderProcessingWorkflow, {
+  args: [order],
+  taskQueue: "orders",
+  workflowId: `order-${order.orderId}`,
+  searchAttributes: {
+    // Static attributes known at the start
+    CustomerId: [order.customerId],
+    OrderDate: [order.orderDate.toISOString()],
+  },
+});
+
+const { searchAttributes } = await handle.describe();
+#+end_src
+
+** Inside the Workflow: Upserting Attributes
+
+#+begin_src javascript
+import { upsertSearchAttributes, ... } from '@temporalio/workflow';
+
+export async function pizzaWorkflow(order: PizzaOrder): Promise<OrderConfirmation | void> {
+  // existing workflow logic...
+
+  try {
+    // Logic to process the order
+    // ...
+
+    // If the order processing reaches here without exceptions,
+    // it's assumed to be successful.
+    upsertSearchAttributes({ isOrderFailed: [false] });
+  } catch (e) {
+    // On catching an error, mark the order as failed
+    upsertSearchAttributes({ isOrderFailed: [true] });
+    throw e; // or handle the error accordingly
+  }
+
+  // ... rest of your workflow logic
+}
+
+#+end_src
+
+** Finding Workflows by Search Attributes
+
+*** SDK
+#+begin_src javascript
+const workflows = client.workflow.list({ query: 'WorkflowType="MyWorkflow"' });
+for await (const workflow of workflows) {
+    //Do something with Workflow
+}
+#+end_src
+*** CLI
+
+#+begin_src shell-script
+temporal workflow list -q ExecutionStatus = "Running"
+temporal operator search-attribute remove --name isOrderFailed
+#+end_src
+
+* [[https://temporal.talentlms.com/unit/view/id:3170][Sample: Custom Search Attributes]]
+
+* [[https://temporal.talentlms.com/unit/view/id:3171][Workflow Cancellations: What to Expect]]
+
+* [[https://temporal.talentlms.com/unit/view/id:3163][What is an Activity Heartbeat?]]
+
+#+begin_quote
+An Activity Heartbeat is a periodic ping sent by the Activity to the
+Temporal Service. This signal serves multiple purposes:
+
+- Progress Indication: It informs the Temporal Service that the
+  Activity is progressing, has not stalled, and how far along it has
+  processed. This can be helpful if the Activity is retried as it can
+  preserve some state from the previous run.
+- Worker Health Check: It indicates that the Worker executing the
+  Activity is operational and has not encountered a failure.
+- Cancellation Detection: It enables the Worker to check if the
+  Activity Execution has been cancelled, allowing for timely and
+  graceful termination of the Activity if necessary.
+#+end_quote
+
+* [[https://temporal.talentlms.com/unit/view/id:3172][Canceling a Workflow Execution]]
+
+
+** Canceling a Workflow from the CLI
+
+*** By Id
+
+#+begin_src shell-script
+temporal workflow cancel --workflow-id=meaningful-business-id
+#+end_src
+
+*** By List Filter
+
+#+begin_src shell-script
+temporal workflow cancel \
+  --query 'ExecutionStatus = "Running" AND WorkflowType="YourWorkflow"' \
+  --reason "Testing"
+#+end_src
+
+*** Canceling a Workflow Execution with the SDK
+
+#+begin_src javascript
+await client.workflow.getHandle("my-workflow-id").cancel();
+#+end_src
+
+
+* [[https://temporal.talentlms.com/unit/view/id:3173][Canceling vs. Terminating Workflow Executions]]
+
+** Canceling Workflow Executions
+
+#+begin_quote
+Here is what happens during Workflow Cancellation:
+
+- The system records a WorkflowExecutionCancelRequested Event in the
+  Workflow History.
+- A Workflow Task gets scheduled to process the cancellation.
+- The Workflow has the opportunity to execute cleanup logic or other
+  necessary final steps. This might involve releasing resources,
+  notifying other services, or saving the current state.
+- The system does not forcibly stop the Workflow. Instead, it allows
+  the Workflow to respond to the cancellation request at its own pace.
+#+end_quote
+
+** Terminating Workflow Executions
+
+#+begin_quote
+Here is what happens during Workflow Termination:
+
+- The system records a WorkflowExecutionTerminated Event in the
+  Workflow History.
+- Termination is immediate and unconditional. The Workflow Execution
+  stops right away, without any opportunity for handling or cleanup in
+  the Workflow code.
+- When you terminate a Workflow Execution, any of its Activities that
+  are currently running will immediately get cancelled. However, the
+  Workers executing these Activities won't be immediately aware of the
+  Cancellation. They will only be aware once the Activity completes or
+  send a Heartbeat.
+- Unlike cancellation, no additional Workflow Task is scheduled
+  following termination.
+
+#+end_quote
+
+** Termination of a Workflow by the Temporal Service
+
+#+begin_quote
+For example, a Workflow Execution will automatically get terminated in
+the following situations:
+
+- The size of the entire Event History exceeds 50 MB.
+- The length of the Event History surpasses 50K Events.
+- The Workflow Execution Timeout is exceeded.
+#+end_quote
+
+* What are Cancellation Scopes?
+
+#+begin_src javascript
+import {
+  CancellationScope,
+  CancelledFailure,
+  proxyActivities,
+} from "@temporalio/workflow";
+import type * as activities from "../activities";
+
+const { httpGetJSON } = proxyActivities<typeof activities>({
+  startToCloseTimeout: "10m",
+});
+
+export async function resumeAfterCancellation(url: string): Promise<any> {
+  let result: any = undefined;
+  const scope = new CancellationScope({ cancellable: true });
+  const promise = scope.run(() => httpGetJSON(url));
+  try {
+    result = await Promise.race([scope.cancelRequested, promise]);
+  } catch (err) {
+    if (!(err instanceof CancelledFailure)) {
+      throw err;
+    }
+    // Prevent Workflow from completing so Activity can complete
+    result = await promise;
+  }
+  return result;
+}
+
+#+end_src
+
+#+begin_src javascript
+import { CancellationScope, proxyActivities } from "@temporalio/workflow";
+import type * as activities from "../activities";
+
+const { httpGetJSON } = proxyActivities<typeof activities>({
+  startToCloseTimeout: "10m",
+});
+
+export async function nonCancellable(url: string): Promise<any> {
+  // Prevent Activity from being canceled and await completion.
+  // Note that the Workflow is completely blocked from cancellation in this example.
+  return CancellationScope.nonCancellable(() => httpGetJSON(url));
+}
+
+#+end_src
+
+#+begin_src javascript
+import { CancellationScope, proxyActivities } from "@temporalio/workflow";
+import type * as activities from "../activities";
+
+export function multipleActivitiesSingleTimeout(
+  urls: string[],
+  timeoutMs: number
+): Promise<any> {
+  const { httpGetJSON } = proxyActivities<typeof activities>({
+    startToCloseTimeout: timeoutMs,
+  });
+
+  // If timeout triggers before all activities complete
+  // the Workflow will fail with a CancelledError.
+  return CancellationScope.withTimeout(timeoutMs, () =>
+    Promise.all(urls.map((url) => httpGetJSON(url)))
+  );
+}
+
+#+end_src
+
+* [[https://temporal.talentlms.com/unit/view/id:3175][Cancellation Scope Example]]
+
+
+* [[https://temporal.talentlms.com/unit/view/id:3176][Cancellation Scope Patterns]]
+
+** Racing Activities
+
+#+begin_src javascript
+const scopePromise = CancellationScope.cancellable(async () => {
+  const p1 = httpGetJSON("http://url1.com");
+  const p2 = httpGetJSON("http://url2.com");
+  const first = await Promise.race([p1, p2]);
+  CancellationScope.current().cancel();
+  return first;
+});
+#+end_src
+
+** Nested Scopes
+
+#+begin_src javascript
+await CancellationScope.cancellable(async () => {
+  await CancellationScope.nonCancellable(() => setup());
+  // ... other operations ...
+});
+#+end_src
+
+** Timeouts
+
+#+begin_src javascript
+return CancellationScope.withTimeout(timeoutMs, () =>
+  Promise.all(urls.map((url) => httpGetJSON(url)))
+);
+#+end_src
+
+* [[https://temporal.talentlms.com/unit/view/id:3177][What is CancelledFailure?]]
+
+** Cleanup for a cancellation happens in response to a CancellationFailure exception
+
+#+begin_src javascript
+import {
+  CancellationScope,
+  CancelledFailure,
+  sleep,
+} from "@temporalio/workflow";
+
+export async function cancelTimer(): Promise<void> {
+  // Timers and Activities are automatically canceled when their containing scope is canceled.
+  try {
+    await CancellationScope.cancellable(async () => {
+      const promise = sleep(1); // <-- Will be canceled because it is attached to this closure's scope
+      CancellationScope.current().cancel();
+      await promise; // <-- Promise must be awaited in order for `cancellable` to throw
+    });
+  } catch (e) {
+    if (isCancellation()) {
+      console.log("Timer canceled");
+    } else {
+      throw e; // <-- Fail the workflow
+    }
+  }
+}
+#+end_src
+
+** [[https://temporal.talentlms.com/unit/view/id:3178][External Cancellation Example]]
+
+#+begin_src javaxcript
+import { CancellationScope, isCancellation } from "@temporalio/workflow";
+
+async function cleanup() {
+  // Logic to release inventory and issue refunds
+}
+
+export async function orderProcessingWorkflow() {
+  try {
+    // Workflow implementation
+  } catch (err) {
+    if (isCancellation(err)) {
+      // Perform cleanup
+      await CancellationScope.nonCancellable(() => cleanup());
+    }
+    throw err;
+  }
+}
+
+#+end_src
+
+* [[https://temporal.talentlms.com/unit/view/id:3179][Canceling an Activity from a Workflow]]
+
+#+begin_src javascript
+import {
+  activityInfo,
+  log,
+  sleep,
+  CancelledFailure,
+  heartbeat,
+} from "@temporalio/activity";
+
+export async function fakeProgress(sleepIntervalMs = 1000): Promise<void> {
+  try {
+    // allow for resuming from Heartbeat
+    const startingPoint = activityInfo().HeartbeatDetails || 1;
+    log.info("Starting activity at progress", { startingPoint });
+    for (let progress = startingPoint; progress <= 100; ++progress) {
+      // simple utility to sleep in activity for given interval or throw if Activity is cancelled
+      // don't confuse with Workflow.sleep which is only used in Workflow functions!
+      log.info("Progress", { progress });
+      await sleep(sleepIntervalMs);
+      heartbeat(progress);
+    }
+  } catch (err) {
+    if (err instanceof CancelledFailure) {
+      log.warn("Fake progress activity canceled", { message: err.message });
+      // Cleanup
+    }
+    throw err;
+  }
+}
+
+#+end_src
+
+** Activity Cancellation Types
+
+#+begin_quote
+Here are the available cancellation types:
+
+- TRY_CANCEL - Initiates a cancellation request and immediately
+  reports the cancellation to the Workflow. The Activity is asked to
+  cancel but doesn't wait for confirmation that the cancellation has
+  occurred.
+- WAIT_CANCELLATION_COMPLETED - Waits for the Activity to confirm its
+  cancellation before reporting the cancellation to the Workflow. The
+  Activity must send a heartbeat to receive the cancellation
+  notification. This can block the cancellation for a long time if the
+  Activity doesn't heartbeat or chooses to ignore the cancellation
+  request.
+- ABANDON - Does not request the cancellation of the Activity and
+  immediately reports the cancellation to the Workflow. This means the
+  Workflow continues as if the Activity was cancelled, but the
+  Activity itself may continue running until completion.
+#+end_quote
+
+*** WAIT_CANCELLATION_COMPLETED
+
+#+begin_src javascript
+const { fakeProgress } = proxyActivities<typeof activities>({
+  startToCloseTimeout: '60s',
+  heartbeatTimeout: '3s',
+  // Don't send rejection to our Workflow until the Activity has confirmed cancellation
+  cancellationType: ActivityCancellationType.WAIT_CANCELLATION_COMPLETED,
+});
+
+export async function runCancellableActivity(): Promise<void> {
+  try {
+    await fakeProgress();
+  } catch (err) {
+    if (isCancellation(err)) {
+      log.info('Workflow cancelled along with its activity');
+      // To clean up use CancellationScope.nonCancellable
+    }
+    throw err;
+  }
+}
+
+#+end_src
+
+* [[https://temporal.talentlms.com/unit/view/id:3180][Asynchronous Activity Completion]]
+
+* [[https://temporal.talentlms.com/unit/view/id:3181][What is Asynchronous Activity Completion?]]
+
+* [[https://temporal.talentlms.com/unit/view/id:3182][When to Use Asynchronous Completion]]
+
+
+#+begin_quote
+- Asynchronous Completion by the External System: The external system
+  directly informs Temporal when it has completed the task using
+  Asynchronous Completion. This means the Activity in the Workflow
+  starts the process, but the completion and the result are reported
+  back by the external system. This method is ideal for long-running
+  processes, since Heartbeats will be sent to indicate the ongoing
+  Activity. It's also important for scenarios where you can monitor
+  the progress and ensure the Activity is alive.
+- Signal from External System: The Activity completes normally with
+  the final result. Once the result is ready, the external system
+  sends a Signal to the Workflow with the result.
+- Polling by Subsequent Activity: A subsequent Activity polls the
+  external system for the result.
+
+#+end_quote
+
+
+* [[https://temporal.talentlms.com/unit/view/id:3183][Deciding Between Asynchronous Completion and Signals]]
+
+** Ideal Cases for Asynchronous Completion:
+
+#+begin_quote
+- Unreliable External Systems: The external system is unreliable and
+  might fail to Signal (e.g., if the system is known to have
+  intermittent connectivity issues). This is because Asynchronous
+  completion provides a way to complete the Activity later when the
+  system becomes available.
+- Need for Heartbeats: If the external task is long-running and you
+  need to know it’s still active, Heartbeats are ideal. They act as a
+  keep-alive signal to Temporal, indicating the process is still
+  ongoing.
+
+#+end_quote
+
+** Ideal Cases for Signals:
+
+#+begin_quote
+- Reliable External Systems: The external system is reliable in
+  performing the task and can signal back with the result. An
+  advantage of this is its simplicity. The Workflow does not need to
+  manage or monitor the ongoing process, it just waits for the final
+  Signal indicating completion.
+- No Need for Heartbeats: The task does not require continuous
+  monitoring (heartbeats)
+#+end_quote
+
+* [[https://temporal.talentlms.com/unit/view/id:3184][How to Asynchronously Complete Activities]]
+
+#+begin_quote
+To use Asynchronous Activity Completions, there are four steps to follow:
+
+1. Provide the external system identifying information of the
+   Activity.
+2. Throw a CompleteAsyncError Error to indicate to the Cluster that
+   the Activity is not yet complete, but is no longer under the direct
+   responsibility of this Worker.
+3. Optionally, while the external work is being done, the Temporal
+   Async Completion Client can be used to send Heartbeats and provide
+   updates on progression of the Activity Execution.
+4. Complete the Activity, using the Asynchronous Completion Client.
+
+#+end_quote
+
+
+* [[https://temporal.talentlms.com/unit/view/id:3186][Essential Points]]
+
+#+begin_quote
+ The following is a summary of the things that you have learned during the course.
+
+- Signaling Your Workflows
+  - You can send a Signal from your Client by first getting a handle
+    on your Workflow.
+  - You can send a Signal from one Workflow to another Workflow using
+    the getExternalWorkflowHandle method.
+  - The total number of Signals received per Workflow Execution cannot
+    exceed 10,000.
+  - To mitigate a Workflow receiving too many Signals, you can batch
+    your Signals.
+  - In scenarios where a Workflow receives a high volume of Signals in
+    a short period of time, it might not process all of them before
+    attempting to complete or transition to another state. This
+    situation leads to an UnhandledCommand error. However, this is
+    only a transient issue and there is no need to deal with this
+    error.
+  - To prevent problems that occur when dealing with Signal handlers
+    that include asynchronous actions, use a pattern where Signals are
+    queued instead of being processed immediately.
+- Querying Your Workflows
+  - You can send a Query from your Client by first getting a handle on
+    your Workflow.
+  - Defining Signals and Queries statically offers several advantages,
+    including type safety and clarity.
+  - Defining Signals and Queries dynamically offers several
+    advantages, including flexibility of code.
+- Finding Your Workflows with Search Attributes
+  - A List Filter acts like a SQL-like query to find all open Workflow
+    Executions of a given type among millions currently running.
+  - A Search Attribute is an indexed field, like labels or tags added
+    to each execution, making it easier to find and organize them
+    based on specific criteria.
+  - Default Search Attributes are created when the initial index is
+    created. They are read-only.
+  - You can set Custom Search Attributes in the Client when you want
+    to set attributes that are known at the start of the
+    Workflow. Otherwise, you can set logic for your Custom Search
+    Attributes within the Workflow logic.
+- Workflow Execution Cancellations
+  - An Activity Heartbeat is a periodic ping sent from the Worker that
+    is executing the Activity to the Temporal Cluster. The signal
+    serves as progress indication and as a Worker health check.
+  - A Heartbeat Timeout is the maximum time between Activity
+    Heartbeats. If an Activity times out (e.g., due to a missed
+    Heartbeat), the next attempt can use this payload to continue from
+    where it left off.
+  - Canceling Workflow Executions in Temporal allows Workflow
+    Executions to terminate gracefully, and they are preferred to
+    terminating Workflow Executions in most cases.
+  - A Cancellation scope in Temporal is a programming construct that
+    allows you to define how and when specific parts of your Workflow
+    should respond to cancellation requests.
+  - Protect critical operations that must run to completion, such as
+    cleanup or finalizing steps by using non-cancellable scopes.
+  - When an external cancellation is received, Temporal throws a
+    CancelledFailure. The Workflow can catch the exception and cancel
+    the Workflow Execution, then perform any cleanup actions.
+  - For an Activity to be cancellable, it must regularly send Activity
+    Heartbeats to the Temporal server.
+- Asynchronous Activity Completion
+  - Asynchronous Activity Completion is a feature that enables an
+    Activity Function to return without causing the Activity Execution
+    to complete.
+  - Asynchronous Completion is best suited for scenarios where the
+    external system's interaction is less predictable or reliable.
+  - A Task Token is a unique identifier for an Activity Task
+    Execution. It's essential for Temporal to track the specific
+    Activity instance across machines.
+#+end_quote
